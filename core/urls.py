@@ -8,7 +8,7 @@ urlpatterns = [
 
     # Profile
     path('profile/', views.profile_view),
-    
+
     # Categories
     path('categories/', views.categories_view),
 
@@ -39,5 +39,4 @@ urlpatterns = [
     path('admin/users/', views.admin_users_view),
     path('admin/dashboard/', views.admin_dashboard_view),
     path('admin/reports/', views.admin_reports_view),
-
 ]

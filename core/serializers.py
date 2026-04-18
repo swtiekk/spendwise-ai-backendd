@@ -27,7 +27,27 @@ class RegisterSerializer(serializers.ModelSerializer):
         profile.save()
         MLInsight.objects.get_or_create(user=user)
         return user
-    
+
+
+class UserProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = UserProfile
+        fields = [
+            'income_type', 'income_cycle', 'income_amount', 'next_income_date',
+            'savings_goal', 'notifications_enabled', 'dark_mode', 'currency',
+            'language', 'budget_alert_threshold', 'push_notifications',
+            'email_notifications', 'budget_alerts', 'weekly_reports', 'spending_reminders',
+        ]
+
+
+class UserSerializer(serializers.ModelSerializer):
+    profile = UserProfileSerializer(read_only=True)
+
+    class Meta:
+        model  = User
+        fields = ['id', 'username', 'email', 'first_name', 'profile', 'is_staff']
+
+
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model  = Category
@@ -52,6 +72,7 @@ class ExpenseSerializer(serializers.ModelSerializer):
         if category_key:
             instance.category = Category.objects.get(key=category_key)
         return super().update(instance, validated_data)
+
 
 class IncomeSerializer(serializers.ModelSerializer):
     class Meta:

@@ -18,7 +18,9 @@ from .serializers import (
     UserProfileSerializer, UserSerializer,
 )
 
+# ─────────────────────────────────────────────
 # AUTH
+# ─────────────────────────────────────────────
 
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
@@ -49,6 +51,7 @@ def profile_view(request):
         return Response(serializer.data)
 
     return Response(serializer.errors, status=400)
+
 
 # ─────────────────────────────────────────────
 # CATEGORIES
@@ -93,6 +96,7 @@ class ExpenseDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         return Expense.objects.filter(user=self.request.user)
+
 
 # ─────────────────────────────────────────────
 # INCOME
