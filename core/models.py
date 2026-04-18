@@ -56,7 +56,7 @@ class Category(models.Model):
 
     def __str__(self):
         return self.label
-
+    
 
 class Expense(models.Model):
     user        = models.ForeignKey(User, on_delete=models.CASCADE, related_name='expenses')
@@ -72,3 +72,105 @@ class Expense(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - ₱{self.amount}"
+
+class Income(models.Model):
+    user       = models.ForeignKey(User, on_delete=models.CASCADE, related_name='incomes')
+    amount     = models.DecimalField(max_digits=10, decimal_places=2)
+    source     = models.CharField(max_length=100)
+    date       = models.DateField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user.username} - ₱{self.amount} from {self.source}"
+
+
+class SavingsGoal(models.Model):
+    user           = models.ForeignKey(User, on_delete=models.CASCADE, related_name='savings_goals')
+    name           = models.CharField(max_length=100)
+    target_amount  = models.DecimalField(max_digits=10, decimal_places=2)
+    current_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    deadline       = models.DateField(null=True, blank=True)
+    category       = models.CharField(max_length=50, blank=True)
+    created_at     = models.DateTimeField(auto_now_add=True)
+    updated_at     = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user.username} - {self.name}"
+
+
+class Alert(models.Model):
+    ALERT_TYPES = [
+        ('warning',  'Warning'),
+        ('critical', 'Critical'),
+        ('success',  'Success'),
+        ('info',     'Info'),
+    ]
+    user       = models.ForeignKey(User, on_delete=models.CASCADE, related_name='alerts')
+    type       = models.CharField(max_length=20, choices=ALERT_TYPES)
+    title      = models.CharField(max_length=100)
+    message    = models.TextField()
+    is_read    = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.user.username} - {self.title}"
+
+
+class MLInsight(models.Model):
+    CLUSTER_CHOICES = [
+        ('Frugal',    'Frugal'),
+        ('Balanced',  'Balanced'),
+        ('Impulsive', 'Impulsive'),
+        ('High-Risk', 'High-Risk'),
+    ]
+    RISK_CHOICES = [
+        ('safe',    'Safe'),
+        ('caution', 'Caution'),
+        ('danger',  'Danger'),
+    ]
+
+    user                = models.OneToOneField(User, on_delete=models.CASCADE, related_name='ml_insight')
+    user_cluster        = models.CharField(max_length=20, choices=CLUSTER_CHOICES, default='Balanced')
+    cluster_description = models.TextField(blank=True)
+    daily_burn_rate     = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    days_remaining      = models.IntegerField(default=0)
+    risk_level          = models.CharField(max_length=20, choices=RISK_CHOICES, default='safe')
+    model_accuracy      = models.FloatField(default=0)
+    prediction          = models.TextField(blank=True)
+    recommendations     = models.JSONField(default=list)
+    weekly_trend        = models.JSONField(default=list)
+    last_updated        = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user.username} - {self.user_cluster} - {self.risk_level}"
+
+
+class SmartPurchaseLog(models.Model):
+    DECISION_CHOICES = [
+        ('safe',    'Safe'),
+        ('caution', 'Caution'),
+        ('risky',   'Risky'),
+    ]
+    user        = models.ForeignKey(User, on_delete=models.CASCADE, related_name='smart_purchases')
+    amount      = models.DecimalField(max_digits=10, decimal_places=2)
+    category    = models.CharField(max_length=50)
+    description = models.TextField(blank=True)
+    decision    = models.CharField(max_length=20, choices=DECISION_CHOICES)
+    risk_score  = models.IntegerField()
+    reasoning   = models.TextField()
+    suggestions = models.JSONField(default=list)
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.username} - ₱{self.amount} - {self.decision}"
+
+# ── Signals ───────────────────────────────────────────────
+@receiver(post_save, sender=User)
+def create_user_profile(sender, instance, created, **kwargs):
+    if created:
+        UserProfile.objects.get_or_create(user=instance)
+        MLInsight.objects.get_or_create(user=instance)
