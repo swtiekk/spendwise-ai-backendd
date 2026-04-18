@@ -18,9 +18,7 @@ from .serializers import (
     UserProfileSerializer, UserSerializer,
 )
 
-# ─────────────────────────────────────────────
 # AUTH
-# ─────────────────────────────────────────────
 
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
