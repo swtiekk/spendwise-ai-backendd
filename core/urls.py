@@ -8,5 +8,13 @@ urlpatterns = [
 
     # Profile
     path('profile/', views.profile_view),
+    
+    # Categories
+    path('categories/', views.categories_view),
+
+    # Expenses
+    path('expenses/', views.ExpenseListCreateView.as_view()),
+    path('expenses/<int:pk>/', views.ExpenseDetailView.as_view()),
+    path('expenses/stats/', views.expense_stats_view),
 
 ]

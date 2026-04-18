@@ -27,3 +27,28 @@ class RegisterSerializer(serializers.ModelSerializer):
         profile.save()
         MLInsight.objects.get_or_create(user=user)
         return user
+    
+class CategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = Category
+        fields = '__all__'
+
+
+class ExpenseSerializer(serializers.ModelSerializer):
+    category_key = serializers.CharField(write_only=True)
+    category     = CategorySerializer(read_only=True)
+
+    class Meta:
+        model  = Expense
+        fields = ['id', 'amount', 'category', 'category_key', 'description', 'timestamp', 'created_at', 'updated_at']
+
+    def create(self, validated_data):
+        category_key = validated_data.pop('category_key')
+        category     = Category.objects.get(key=category_key)
+        return Expense.objects.create(category=category, **validated_data)
+
+    def update(self, instance, validated_data):
+        category_key = validated_data.pop('category_key', None)
+        if category_key:
+            instance.category = Category.objects.get(key=category_key)
+        return super().update(instance, validated_data)
