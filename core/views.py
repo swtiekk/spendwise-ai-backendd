@@ -93,3 +93,273 @@ class ExpenseDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         return Expense.objects.filter(user=self.request.user)
+
+# ─────────────────────────────────────────────
+# INCOME
+# ─────────────────────────────────────────────
+
+class IncomeListCreateView(generics.ListCreateAPIView):
+    serializer_class = IncomeSerializer
+
+    def get_queryset(self):
+        return Income.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+# ─────────────────────────────────────────────
+# DASHBOARD
+# ─────────────────────────────────────────────
+
+@api_view(['GET'])
+def dashboard_view(request):
+    user = request.user
+
+    expenses = Expense.objects.filter(user=user)
+    incomes  = Income.objects.filter(user=user)
+    profile  = user.profile
+
+    total_expenses = expenses.aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    total_income   = incomes.aggregate(t=Sum('amount'))['t'] or Decimal(str(profile.income_amount))
+    balance        = total_income - total_expenses
+
+    breakdown = {}
+    for exp in expenses:
+        key = exp.category.key if exp.category else 'other'
+        breakdown[key] = float(breakdown.get(key, 0)) + float(exp.amount)
+
+    return Response({
+        'balance': float(balance),
+        'total_expenses': float(total_expenses),
+        'total_income': float(total_income),
+        'average_daily_spend': float(total_expenses) / 30,
+        'savings_goal': float(profile.savings_goal),
+        'category_breakdown': breakdown,
+    })
+
+
+# ─────────────────────────────────────────────
+# EXPENSE STATS
+# ─────────────────────────────────────────────
+
+@api_view(['GET'])
+def expense_stats_view(request):
+    user = request.user
+
+    expenses = Expense.objects.filter(user=user)
+    profile = user.profile
+
+    total  = expenses.aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    income = Decimal(str(profile.income_amount))
+    balance = income - total
+
+    breakdown = {}
+    for exp in expenses:
+        key = exp.category.key if exp.category else 'other'
+        breakdown[key] = float(breakdown.get(key, 0)) + float(exp.amount)
+
+    daily_spend = float(total) / 30 if float(total) > 0 else 1
+    days_remaining = int(float(balance) / daily_spend) if daily_spend > 0 else 0
+
+    return Response({
+        'total_expenses': float(total),
+        'total_income': float(income),
+        'balance': float(balance),
+        'average_daily_spend': float(total) / 30,
+        'days_remaining': max(0, days_remaining),
+        'category_breakdown': breakdown,
+    })
+
+
+# ─────────────────────────────────────────────
+# SAVINGS GOALS
+# ─────────────────────────────────────────────
+
+class SavingsGoalListCreateView(generics.ListCreateAPIView):
+    serializer_class = SavingsGoalSerializer
+
+    def get_queryset(self):
+        return SavingsGoal.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class SavingsGoalDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = SavingsGoalSerializer
+
+    def get_queryset(self):
+        return SavingsGoal.objects.filter(user=self.request.user)
+
+
+# ─────────────────────────────────────────────
+# ALERTS
+# ─────────────────────────────────────────────
+
+@api_view(['GET'])
+def alerts_view(request):
+    alerts = Alert.objects.filter(user=request.user)
+    return Response(AlertSerializer(alerts, many=True).data)
+
+
+@api_view(['PATCH'])
+def mark_alert_read(request, pk):
+    try:
+        alert = Alert.objects.get(pk=pk, user=request.user)
+        alert.is_read = True
+        alert.save()
+        return Response({'status': 'marked as read'})
+    except Alert.DoesNotExist:
+        return Response({'error': 'Not found'}, status=404)
+
+
+# ─────────────────────────────────────────────
+# ML INSIGHTS
+# ─────────────────────────────────────────────
+
+@api_view(['GET'])
+def insights_view(request):
+    insight, _ = MLInsight.objects.get_or_create(user=request.user)
+    return Response(MLInsightSerializer(insight).data)
+
+
+# ─────────────────────────────────────────────
+# SMART PURCHASE
+# ─────────────────────────────────────────────
+
+@api_view(['POST'])
+def smart_purchase_view(request):
+    amount = Decimal(str(request.data.get('amount', 0)))
+    category = request.data.get('category', 'other')
+    description = request.data.get('description', '')
+
+    profile = request.user.profile
+    income = Decimal(str(profile.income_amount))
+    expenses_total = Expense.objects.filter(user=request.user).aggregate(t=Sum('amount'))['t'] or Decimal('0')
+    balance = income - expenses_total
+    savings_goal = Decimal(str(profile.savings_goal))
+
+    safe_threshold = balance * Decimal('0.10')
+    caution_threshold = balance * Decimal('0.25')
+
+    if balance <= 0:
+        decision = 'risky'
+        risk_score = 100
+        reasoning = "No remaining budget."
+        suggestions = ["Wait for income.", "Reduce expenses."]
+    elif amount <= safe_threshold:
+        decision = 'safe'
+        risk_score = 20
+        reasoning = "Safe purchase."
+        suggestions = ["Proceed."]
+    elif amount <= caution_threshold:
+        decision = 'caution'
+        risk_score = 50
+        reasoning = "Use caution."
+        suggestions = ["Consider alternatives."]
+    else:
+        decision = 'risky'
+        risk_score = 90
+        reasoning = "Too expensive."
+        suggestions = ["Delay purchase."]
+
+    SmartPurchaseLog.objects.create(
+        user=request.user,
+        amount=amount,
+        category=category,
+        description=description,
+        decision=decision,
+        risk_score=risk_score,
+        reasoning=reasoning,
+        suggestions=suggestions,
+    )
+
+    return Response({
+        'decision': decision,
+        'risk_score': risk_score,
+        'reasoning': reasoning,
+        'suggestions': suggestions,
+        'current_balance': float(balance),
+        'remaining_budget': float(balance - amount),
+    })
+
+
+# ─────────────────────────────────────────────
+# ADMIN
+# ─────────────────────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAdminUser])
+def admin_users_view(request):
+    users = User.objects.all().select_related('profile', 'ml_insight')
+
+    data = []
+    for u in users:
+        profile = getattr(u, 'profile', None)
+        insight = getattr(u, 'ml_insight', None)
+
+        data.append({
+            'id': u.id,
+            'name': u.get_full_name() or u.username,
+            'email': u.email,
+            'income_type': profile.income_type if profile else None,
+            'income_cycle': profile.income_cycle if profile else None,
+            'cluster': insight.user_cluster if insight else None,
+            'risk_level': insight.risk_level if insight else None,
+            'date_joined': u.date_joined,
+        })
+
+    return Response(data)
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAdminUser])
+def admin_dashboard_view(request):
+    total_users = User.objects.count()
+    total_expenses = Expense.objects.aggregate(t=Sum('amount'))['t'] or 0
+
+    cluster_counts = {}
+    for insight in MLInsight.objects.all():
+        cluster_counts[insight.user_cluster] = cluster_counts.get(insight.user_cluster, 0) + 1
+
+    return Response({
+        'total_users': total_users,
+        'total_expenses': float(total_expenses),
+        'cluster_distribution': cluster_counts,
+    })
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAdminUser])
+def admin_reports_view(request):
+    monthly = (
+        Expense.objects
+        .annotate(month=TruncMonth('timestamp'))
+        .values('month')
+        .annotate(
+            total_spend=Sum('amount'),
+            user_count=Count('user', distinct=True),
+        )
+        .order_by('month')
+    )
+
+    data = []
+
+    for row in monthly:
+        month_dt = row['month']
+        total = float(row['total_spend'] or 0)
+        users = row['user_count'] or 0
+        avg = total / users if users else 0
+
+        data.append({
+            'month': month_dt.strftime('%b %Y'),
+            'users': users,
+            'totalSpend': f"₱{total:,.2f}",
+            'avgSpend': f"₱{avg:,.2f}",
+            'alerts': 0,
+            'savings': "₱0.00",
+            'topCategory': "N/A",
+        })
+
+    return Response(data)

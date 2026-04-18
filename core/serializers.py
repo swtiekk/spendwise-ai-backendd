@@ -52,3 +52,36 @@ class ExpenseSerializer(serializers.ModelSerializer):
         if category_key:
             instance.category = Category.objects.get(key=category_key)
         return super().update(instance, validated_data)
+
+class IncomeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = Income
+        fields = ['id', 'amount', 'source', 'date', 'created_at', 'updated_at']
+
+
+class SavingsGoalSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = SavingsGoal
+        fields = ['id', 'name', 'target_amount', 'current_amount', 'deadline', 'category', 'created_at', 'updated_at']
+
+
+class AlertSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = Alert
+        fields = ['id', 'type', 'title', 'message', 'is_read', 'created_at']
+
+
+class MLInsightSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = MLInsight
+        fields = [
+            'user_cluster', 'cluster_description', 'daily_burn_rate',
+            'days_remaining', 'risk_level', 'model_accuracy',
+            'prediction', 'recommendations', 'weekly_trend', 'last_updated',
+        ]
+
+
+class SmartPurchaseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = SmartPurchaseLog
+        fields = ['id', 'amount', 'category', 'description', 'decision', 'risk_score', 'reasoning', 'suggestions', 'created_at']
