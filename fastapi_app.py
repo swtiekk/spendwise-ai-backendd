@@ -1,11 +1,9 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import Optional
 import sqlite3
 import hashlib
-import os
 
 app = FastAPI(title="SpendWise AI API", version="1.0.0")
 
@@ -23,9 +21,7 @@ def get_db():
     db.row_factory = sqlite3.Row
     return db
 
-security = HTTPBearer()
-
-# ── Pydantic Models (request bodies) ─────────────────────
+# ── Pydantic Models ───────────────────────────────────────
 class RegisterRequest(BaseModel):
     username: str
     email: str
@@ -54,19 +50,7 @@ def root():
         "system": "SpendWise AI",
         "version": "1.0.0",
         "status": "running",
-        "docs": "http://127.0.0.1:8001/docs",
-        "endpoints": [
-            "POST /auth/register",
-            "POST /auth/login",
-            "GET  /expenses",
-            "POST /expenses",
-            "GET  /dashboard",
-            "GET  /insights",
-            "POST /smart-purchase",
-            "GET  /categories",
-            "GET  /alerts",
-            "GET  /savings-goals",
-        ]
+        "docs": "http://127.0.0.1:8001/docs"
     }
 
 # ── Auth ──────────────────────────────────────────────────
@@ -78,18 +62,26 @@ def register(data: RegisterRequest):
             "SELECT id FROM auth_user WHERE username = ?", 
             (data.username,)
         ).fetchone()
+
         if existing:
             raise HTTPException(status_code=400, detail="Username already exists")
 
         hashed = hashlib.md5(data.password.encode()).hexdigest()
+
         db.execute(
             "INSERT INTO auth_user (username, email, first_name, password, is_active, is_staff, is_superuser, date_joined) VALUES (?, ?, ?, ?, 1, 0, 0, datetime('now'))",
             (data.username, data.email, data.first_name, hashed)
         )
         db.commit()
-        return {"message": "User registered successfully", "username": data.username, "email": data.email}
+
+        return {
+            "message": "User registered successfully",
+            "username": data.username
+        }
+
     finally:
         db.close()
+
 
 @app.post("/auth/login")
 def login(data: LoginRequest):
@@ -99,8 +91,10 @@ def login(data: LoginRequest):
             "SELECT * FROM auth_user WHERE username = ?",
             (data.username,)
         ).fetchone()
+
         if not user:
             raise HTTPException(status_code=401, detail="Invalid credentials")
+
         return {
             "message": "Login successful",
             "user": {
@@ -109,9 +103,9 @@ def login(data: LoginRequest):
                 "email": user["email"],
                 "name": user["first_name"],
             },
-            "access_token": f"fastapi-token-{user['id']}-{data.username}",
-            "token_type": "bearer"
+            "token": f"fastapi-token-{user['id']}-{data.username}"
         }
+
     finally:
         db.close()
 
@@ -137,9 +131,11 @@ def get_expenses():
             LEFT JOIN core_category c ON e.category_id = c.id
             ORDER BY e.timestamp DESC
         """).fetchall()
+
         return [dict(r) for r in rows]
     finally:
         db.close()
+
 
 @app.post("/expenses")
 def create_expense(data: ExpenseRequest):
@@ -149,22 +145,22 @@ def create_expense(data: ExpenseRequest):
             "SELECT id FROM core_category WHERE key = ?",
             (data.category_key,)
         ).fetchone()
+
         if not category:
-            raise HTTPException(status_code=400, detail=f"Category '{data.category_key}' not found")
+            raise HTTPException(status_code=400, detail="Category not found")
 
         cursor = db.execute(
             "INSERT INTO core_expense (amount, category_id, description, timestamp, created_at, updated_at, user_id) VALUES (?, ?, ?, ?, datetime('now'), datetime('now'), 3)",
             (data.amount, category["id"], data.description, data.timestamp)
         )
+
         db.commit()
+
         return {
             "id": cursor.lastrowid,
-            "amount": data.amount,
-            "category_key": data.category_key,
-            "description": data.description,
-            "timestamp": data.timestamp,
             "message": "Expense created successfully"
         }
+
     finally:
         db.close()
 
@@ -176,22 +172,15 @@ def get_dashboard():
         result = db.execute(
             "SELECT SUM(amount) as total FROM core_expense"
         ).fetchone()
-        total_expenses = float(result["total"] or 0)
 
-        breakdown = db.execute("""
-            SELECT c.key, c.label, SUM(e.amount) as total
-            FROM core_expense e
-            LEFT JOIN core_category c ON e.category_id = c.id
-            GROUP BY c.key, c.label
-        """).fetchall()
+        total_expenses = float(result["total"] or 0)
 
         return {
             "total_expenses": total_expenses,
             "total_income": 18000.0,
-            "balance": 18000.0 - total_expenses,
-            "average_daily_spend": round(total_expenses / 30, 2),
-            "category_breakdown": {r["key"]: float(r["total"]) for r in breakdown}
+            "balance": 18000.0 - total_expenses
         }
+
     finally:
         db.close()
 
@@ -203,9 +192,12 @@ def get_insights():
         row = db.execute(
             "SELECT * FROM core_mlinsight LIMIT 1"
         ).fetchone()
+
         if not row:
             raise HTTPException(status_code=404, detail="No insights found")
+
         return dict(row)
+
     finally:
         db.close()
 
@@ -217,7 +209,9 @@ def get_alerts():
         rows = db.execute(
             "SELECT * FROM core_alert ORDER BY created_at DESC"
         ).fetchall()
+
         return [dict(r) for r in rows]
+
     finally:
         db.close()
 
@@ -229,7 +223,9 @@ def get_savings_goals():
         rows = db.execute(
             "SELECT * FROM core_savingsgoal"
         ).fetchall()
+
         return [dict(r) for r in rows]
+
     finally:
         db.close()
 
@@ -243,77 +239,24 @@ def smart_purchase(data: SmartPurchaseRequest):
         result = db.execute(
             "SELECT SUM(amount) as total FROM core_expense"
         ).fetchone()
+
         total_expenses = float(result["total"] or 0)
-        income  = 18000.0
+        income = 18000.0
         balance = income - total_expenses
 
-        safe_threshold    = balance * 0.10
-        caution_threshold = balance * 0.25
-
         if balance <= 0:
-            decision   = "risky"
-            risk_score = 100
-            reasoning  = f"Your current balance is ₱{balance:,.2f}. Any purchase right now is not recommended."
-            suggestions = ["You have no remaining budget.", "Wait for your next income cycle."]
-        elif amount <= safe_threshold:
-            decision   = "safe"
-            risk_score = int((amount / safe_threshold) * 30)
-            reasoning  = f"₱{amount:,.2f} is within your safe spending range based on your balance of ₱{balance:,.2f}."
-            suggestions = ["You can proceed.", "Log it immediately after buying."]
-        elif amount <= caution_threshold:
-            decision   = "caution"
-            risk_score = int(30 + ((amount - safe_threshold) / (caution_threshold - safe_threshold)) * 40)
-            reasoning  = f"₱{amount:,.2f} is manageable but will use a significant portion of your ₱{balance:,.2f} balance."
-            suggestions = ["Only proceed if this is a priority.", "Look for a lower-cost alternative."]
+            decision = "risky"
+        elif amount <= balance * 0.10:
+            decision = "safe"
+        elif amount <= balance * 0.25:
+            decision = "caution"
         else:
-            decision   = "risky"
-            risk_score = min(100, int(70 + ((amount - caution_threshold) / caution_threshold) * 30))
-            reasoning  = f"₱{amount:,.2f} exceeds 25% of your balance of ₱{balance:,.2f}."
-            suggestions = ["Defer until next pay cycle.", "Review your spending breakdown first."]
+            decision = "risky"
 
         return {
-            "decision":         decision,
-            "risk_score":       risk_score,
-            "reasoning":        reasoning,
-            "suggestions":      suggestions,
-            "current_balance":  balance,
-            "remaining_budget": balance - amount,
-            "safe_threshold":   safe_threshold,
-            "caution_threshold": caution_threshold,
+            "decision": decision,
+            "current_balance": balance
         }
-    finally:
-        db.close()
 
-# ── Admin ─────────────────────────────────────────────────
-@app.get("/admin/users")
-def admin_users():
-    db = get_db()
-    try:
-        rows = db.execute("""
-            SELECT u.id, u.username, u.email, u.first_name as name,
-                   u.date_joined, p.income_type, p.income_cycle,
-                   m.user_cluster as cluster, m.risk_level
-            FROM auth_user u
-            LEFT JOIN core_userprofile p ON u.id = p.user_id
-            LEFT JOIN core_mlinsight m ON u.id = m.user_id
-        """).fetchall()
-        return [dict(r) for r in rows]
-    finally:
-        db.close()
-
-@app.get("/admin/dashboard")
-def admin_dashboard():
-    db = get_db()
-    try:
-        total_users    = db.execute("SELECT COUNT(*) as c FROM auth_user").fetchone()["c"]
-        total_expenses = db.execute("SELECT SUM(amount) as t FROM core_expense").fetchone()["t"] or 0
-        clusters       = db.execute(
-            "SELECT user_cluster, COUNT(*) as count FROM core_mlinsight GROUP BY user_cluster"
-        ).fetchall()
-        return {
-            "total_users":          total_users,
-            "total_expenses":       float(total_expenses),
-            "cluster_distribution": {r["user_cluster"]: r["count"] for r in clusters}
-        }
     finally:
         db.close()
